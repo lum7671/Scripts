@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+if [ ! -d "$1" ];
+then
+	echo -e "[1;34mUsage:[1;31m\n$0 [dir][0;0m"
+	exit;
+fi
+
+if [ "$1" != "." ]
+then
+	cd "$1"
+fi
+
+
+find . -maxdepth 1 -type d -exec kr2u8f "{}" \;
+find . -maxdepth 1 -type d -exec kr2u8fD "{}" \;
+find . -type d -exec kr2u8fA "{}" \;

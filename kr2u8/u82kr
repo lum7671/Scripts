@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+if [ ! -f "$1" ]; then
+	echo -e "The file's text encoding will be changed to euc-kr from utf-8.\n[1;34mUsage:[1;31m\n$0 [file][0;0m"
+	exit
+fi
+
+STRINGS=`iconv "$1" -f=UTF-8 -t=UHC -o "$1.EUC-KR"`
+case $? in
+	0)
+		mv "$1" "$1.bak"
+		mv "$1.EUC-KR" "$1"
+		echo "[1;34m$1 [1;32mconvert succeeded[0;0m"
+		;;
+	1)
+		rm "$1.EUC-KR"
+		echo "[1;34m$1 [1;31mis not korean UTF-8[0;0m"
+		;;
+esac

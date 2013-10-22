@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+if [ "$1" != "." ]
+then
+	cd "$1"
+fi
+find . -maxdepth 1 -type d -exec u82krf "{}" \;
+find . -maxdepth 1 -type d -exec u82krfD "{}" \;
+find . -type d -exec u82krfA "{}" \;

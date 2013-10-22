@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+if [ "$1" == "." ];
+then
+	exit;
+fi
+
+if [ -d "$1" ]; then
+	exit;
+fi
+
+if [ ! -f "$1" ];
+then
+	echo -e "[1;34mUsage:[1;31m\n$0 [file][0;0m"
+	exit;
+fi
+
+STRINGS=`echo "$1" | iconv -f=UHC -t=UTF-8`
+case $? in
+	0)
+		if [ "$1" != "$STRINGS" ];
+		then
+			mv "$1" "$STRINGS"
+			echo "[1;34m$STRINGS [1;32mconvert succeeded[0;0m"
+		fi
+		;;
+	1)
+		echo "[1;34m$1 [1;31mis not EUC-KR[0;0m"
+		;;
+esac

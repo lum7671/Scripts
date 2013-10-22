@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+if [ "$1" == "." ]
+then
+	exit
+fi
+cd "$1"
+find . -maxdepth 1 -type d -exec kr2u8f "{}" \;
+find . -maxdepth 1 -type d -exec kr2u8fD "{}" \;
