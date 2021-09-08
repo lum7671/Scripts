@@ -22,6 +22,7 @@ GITS=(
         git fetch --all --prune --jobs=10
     done
     echo "==================================> run update-all.sh"
+    # [andmpel/MacOS-All-In-One-Update-Script: Mac update shell script (Appstore, macOS, Homebrew and others)](https://github.com/andmpel/MacOS-All-In-One-Update-Script)
     /usr/local/bin/zsh $HOME/git/MacOS-All-In-One-Update-Script/update-all.sh
     # echo "==================================> Update_All.command"
     # TERM=xterm bash /Users/x/git/Update_All/Update_All.command
