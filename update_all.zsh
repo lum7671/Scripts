@@ -1,4 +1,4 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env zsh -li
 
 
 TODAY="$(date +%Y%m%d_%H%M%S)"
