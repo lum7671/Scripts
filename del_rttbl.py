@@ -7,7 +7,7 @@ ck001 = "172.30.1."
 ck002 = "via"
 ck003 = "10.211."
 ck004 = "dev"
-ck005 = "utun2"
+ck005 = "utun"
 
 print(f"FIND RULE : '{ck001}*' '{ck002}' '{ck003}*' '{ck004}' '{ck005}'")
 
