@@ -48,5 +48,8 @@ GITS=(
     # echo "==================================> update"
     # TERM=xterm bash "$HOME/git/update/bin/update"
 
+    echo "==================================> JoplinBackup.zsh"
+    /usr/local/bin/zsh $HOME/git/Scripts/JoplinBackup.zsh
+
     echo "==================================> The End !!!"
 ) > $LOGFILE 2>&1
