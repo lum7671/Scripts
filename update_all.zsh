@@ -23,6 +23,7 @@ GITS=(
     "$HOME/git/org-mode/"
     "$HOME/git/worg/"
     "$HOME/git/ytfzf/"
+    "$HOME/git/emacs-mac/"
 )
 
 (
