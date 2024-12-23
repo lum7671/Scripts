@@ -24,7 +24,8 @@ GITS=(
     "$HOME/git/worg/"
     "$HOME/git/ytfzf/"
 #    "$HOME/git/emacs-mac/"
-    "$HOME/git/doomemacs/"
+#    "$HOME/git/doomemacs/"
+    "$HOME/git/minutes_diff/"
 )
 
 (
