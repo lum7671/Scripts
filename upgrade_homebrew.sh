@@ -1,7 +1,9 @@
 #!/bin/bash
 
+PATH="/usr/local/bin:$PATH"
+
 # 로그 파일 설정
-LOG_FILE="$HOME/upgrade_log.txt"
+LOG_FILE="/tmp/upgrade_log.txt"
 
 # 현재 날짜와 시간
 CURRENT_DATE=$(date "+%Y-%m-%d %H:%M:%S")
