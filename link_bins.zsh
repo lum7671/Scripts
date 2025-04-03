@@ -1,202 +1,192 @@
 #!/usr/bin/env zsh
 
 # ===== CONFIGURATION =====
-TARGET_DIR="${HOME}/opt/bin"          # 심볼릭 링크 생성 위치
-SOURCE_BASE="/usr/local/opt"          # 검색 시작 경로
-DIR_PATTERNS=("bin" "uubin" "gnubin") # 완전 매칭 대상 디렉토리
-DEPTH_MAP=( # 디렉토리 별 깊이 매핑
+readonly TARGET_DIR="${HOME}/opt/bin"
+readonly SOURCE_BASE="/usr/local/opt"
+readonly DEPTH_MAP=(
     "bin:2"
     "uubin:4"
     "gnubin:4"
 )
+readonly EXCLUDE_PATTERNS=("*.dylib" "*.so")
 
-EXCLUDE_PATTERNS=("*.dylib" "*.so") # 제외할 파일 패턴
+# 버전 패턴 매칭용 정규식
+readonly VERSION_PATTERN='@[0-9.]+$'
+
+# 예외 설정: 특정 패키지의 특정 버전을 우선 사용
+readonly PRIORITY_OVERRIDE=(
+    # "node@18"  # 예: node 18 버전을 우선 사용하고 싶을 때
+    # "python@3.8"
+)
+
+# ===== ERROR HANDLING =====
+error() {
+    echo "[ERROR] $*" >&2
+    return 1
+}
+
+warn() {
+    echo "[WARN] $*" >&2
+}
+
+info() {
+    echo "[INFO] $*"
+}
 
 # ===== FUNCTION: 실행 가능 파일 필터링 =====
 is_executable() {
-    [[ -f "$1" ]] || return 1
-    [[ -x "$1" ]] || return 1
+    local file="$1"
+    [[ -f "$file" && -x "$file" ]] || return 1
 
-    # 1. Shebang 우선 검사 (모든 파일 대상)
-    if dd if="$1" bs=2 count=1 2>/dev/null | grep -q $'^\x23\x21'; then
+    # Shebang 검사를 간소화
+    if head -c 2 "$file" 2>/dev/null | grep -q $'^\x23\x21'; then
         return 0
     fi
 
-    case $(file -b "$1") in
-        # macOS 확장 패턴 (모든 쉘 스크립트 포괄)
-        *Mach-O*executable*|*Mach-O*64-bit*|*script*executable*|*Bourne-Again*|*Perl*)
-            return 0 ;;
-        # Linux 확장 패턴
+    local file_type=$(file -b "$file")
+    case "$file_type" in
+        *Mach-O*executable*|*Mach-O*64-bit*|*script*executable*|*Bourne-Again*|*Perl*|\
         *ELF*executable*|*POSIX*shell*|*Perl*script*|*Python*script*)
             return 0 ;;
-        # Java/JAR 파일
         *Java*archive*|*compressed*Zip*)
-            [[ "$1" == *.jar ]] && return 0 ;;
-        # 심볼릭 링크 심층 검사
+            [[ "$file" == *.jar ]] && return 0 ;;
         *symbolic*link*)
-            local target=$(readlink -f "$1")
+            local target=$(readlink -f "$file")
             [[ -n "$target" ]] && is_executable "$target" ;;
         *)
             return 1 ;;
     esac
 }
 
-
-
 # ===== FUNCTION: 심볼릭 링크 생성 =====
 create_link() {
     local src="$1"
-
-    # 최종 원본 확인
     local real_src=$(readlink -f "$src" 2>/dev/null || echo "$src")
-    if [[ ! -x "$real_src" ]]; then
-        echo "[WARN] Missing execute permission: $src" >&2
-        return 1
-    fi
+    local dest="${TARGET_DIR}/${src:t}"
+    local basename=${src:t}
 
-    local dest="${TARGET_DIR}/${src:t}" # 파일명만 추출
+    [[ -x "$real_src" ]] || { warn "Missing execute permission: $src"; return 1; }
 
     # 이미 존재하는 링크 처리
     if [[ -e "$dest" ]]; then
+        local current_src=$(readlink "$dest")
+        local current_base=${current_src:t:h}
+        
+        # 현재 링크가 버전이 없는 formula이거나 우선순위 오버라이드에 있는 경우 건너뛰기
+        if ! [[ $current_base =~ $VERSION_PATTERN ]] || is_priority_override "$current_base"; then
+            warn "Skipping: $dest → $current_src (higher priority)"
+            return 0
+        fi
+        
+        # 새로운 소스가 버전이 있는 formula이고 우선순위 오버라이드가 아니면 건너뛰기
+        if [[ $basename =~ $VERSION_PATTERN ]] && ! is_priority_override "$basename"; then
+            warn "Skipping: $src (lower priority)"
+            return 0
+        fi
+
         if ((FORCE)); then
             rm -f "$dest"
         else
-            echo "[SKIP] Exist: $dest → $(readlink "$dest")" >&2
-            return
+            warn "Exist: $dest → $current_src"
+            return 0
         fi
     fi
 
-    # 실제 링크 생성
     if ((DRY_RUN)); then
-        echo "[DRY] ln -s '$src' '$dest'"
+        info "[DRY] ln -s '$src' '$dest'"
     else
         ln -sfv "$src" "$dest"
     fi
 }
 
-# ===== DYNAMIC DEPTH CALCULATION =====
-calculate_max_depth() {
-    local max=0
-    for entry in $DEPTH_MAP; do
-        local depth=${entry#*:}
-        ((depth > max)) && max=$depth
+# ===== FUNCTION: 우선순위 오버라이드 확인 =====
+is_priority_override() {
+    local name="$1"
+    for override in $PRIORITY_OVERRIDE; do
+        [[ "$name" == "$override" ]] && return 0
     done
-    echo $max
+    return 1
 }
-FD_MAX_DEPTH=$(calculate_max_depth)
 
 # ===== FUNCTION: 조건별 디렉토리 검색 =====
-# find_target_dirs() {
-#     local pattern depth
-#     for entry in $DEPTH_MAP; do
-#         local dir=${entry%:*}
-#         local depth=${entry#*:}
-#         fd -d $depth -t d -L "^${dir}$" "$SOURCE_BASE"
-#     done
-# }
-
-# find_target_dirs() {
-#     local pattern depth
-#     for entry in $DEPTH_MAP; do
-#         local dir=${entry%:*}
-#         local depth=${entry#*:}
-#         # 절대 경로 기준으로 검색
-#         fd -d $depth -t d -L "^${dir}$" "/usr/local/opt" --base-directory="/usr/local/opt"
-#
-#         # 디버깅 코드 추가
-#         echo "[DEBUG] Searching for '$dir' at depth $depth"
-#         fd -d $depth -t d -L "^${dir}$" "/usr/local/opt" --print0 | xargs -0 -I{} echo "[FOUND] {}"
-#
-#     done
-# }
-
-# ===== ENHANCED DIRECTORY VALIDATION =====
 find_target_dirs() {
-    local pattern depth
+    local dir depth
     for entry in $DEPTH_MAP; do
-        local dir=${entry%:*}
-        local depth=${entry#*:}
-
-        # 3단계 유효성 검사:
-        # 1. fd로 기본 검색
-        # 2. test -d로 실제 디렉토리 확인
-        # 3. readlink로 최종 대상 확인
-        fd -d $depth -t d -L "^${dir}$" "$SOURCE_BASE" \
-            -x bash -c '
-                for p; do
-                    [[ -d "$p" ]] && [[ -e "$p" ]] && echo "$p"
-                done' _ {} +
+        dir=${entry%:*}
+        depth=${entry#*:}
+        fd -d "$depth" -t d -L "^${dir}$" "$SOURCE_BASE" | while read -r p; do
+            [[ -d "$p" && -e "$p" ]] && echo "$p"
+        done
     done
 }
 
 # ===== MAIN LOGIC =====
 main() {
     # 의존성 체크
-    if ! command -v fd &>/dev/null; then
-        echo "[ERROR] Install 'fd': brew install fd" >&2
-        exit 127
-    fi
+    command -v fd >/dev/null || error "Install 'fd': brew install fd"
+    command -v file >/dev/null || error "Command 'file' not found"
 
     # 타겟 디렉토리 생성
-    mkdir -p "$TARGET_DIR" || exit 1
+    mkdir -p "$TARGET_DIR" || error "Failed to create target directory"
 
-    # FD로 조건별 디렉토리 검색 (깊이+이름 동시 필터링)
-    find_target_dirs | while read bin_dir; do
-        echo "[SCAN] Directory: $bin_dir"
-
-        # 실행 파일 처리
-        # find "$bin_dir" -maxdepth 1 -type f | while read exe; do
-        # 파일+링크 동시 검색
-        find "$bin_dir" -maxdepth 1 \( -type f -o -type l \) | while read exe; do
-
+    # 실행파일 처리
+    find_target_dirs | while read -r bin_dir; do
+        info "Scanning directory: $bin_dir"
+        
+        find "$bin_dir" -maxdepth 1 \( -type f -o -type l \) | while read -r exe; do
+            local basename=${exe:t}
+            
             # 제외 패턴 확인
             for pattern in $EXCLUDE_PATTERNS; do
-                # [[ "$exe" == $~pattern ]] && continue 2
-                if [[ "${exe:t}" == ${~pattern} ]]; then
-                    echo "[SKIP] Excluded: $exe"
+                if [[ "$basename" == ${~pattern} ]]; then
+                    warn "Excluded: $exe"
                     continue 2
                 fi
             done
 
-            # 실행 가능성 검증
             if is_executable "$exe"; then
                 create_link "$exe"
             else
-                echo "[SKIP] Not executable: $exe"
+                warn "Not executable: $exe"
             fi
-            # is_executable "$exe" || continue
-            # 심볼릭 링크 생성
-            # create_link "$exe"
         done
     done
 
     # 깨진 링크 정리
-    find "$TARGET_DIR" -type l | while read link; do
-        [[ -e "$link" ]] || {
-            echo "[CLEAN] Removing broken: $link" >&2
-            ((DRY_RUN)) || rm -f "$link"
-        }
-    done
+    local broken_links=()
+    while IFS= read -r link; do
+        if ! test -e "$link"; then
+            broken_links+=("$link")
+            info "[CLEAN] Found broken link: $link"
+        fi
+    done < <(find "$TARGET_DIR" -type l)
+
+    # 깨진 링크 제거
+    if ((${#broken_links[@]} > 0)); then
+        if ((DRY_RUN)); then
+            info "[DRY] Would remove ${#broken_links[@]} broken links"
+        else
+            for link in "${broken_links[@]}"; do
+                rm -f "$link" && info "[CLEAN] Removed: $link"
+            done
+        fi
+    fi
 }
 
+# ===== SETUP =====
+# GNU readlink 우선 사용
+(( $+commands[greadlink] )) && alias readlink="greadlink"
+
 # ===== OPTION PARSING =====
+typeset -i FORCE=0 DRY_RUN=0
 while (($#)); do
     case "$1" in
-    -f | --force) FORCE=1 ;;
-    -d | --dry-run) DRY_RUN=1 ;;
-    *)
-        echo "Unknown option: $1" >&2
-        exit 1
-        ;;
+        -f|--force) FORCE=1 ;;
+        -d|--dry-run) DRY_RUN=1 ;;
+        *) error "Unknown option: $1" ;;
     esac
     shift
 done
-
-# GNU readlink 우선 사용
-if (( $+commands[greadlink] )); then
-    alias readlink="greadlink"
-fi
-
 
 # ===== ENTRY POINT =====
 main "$@"
