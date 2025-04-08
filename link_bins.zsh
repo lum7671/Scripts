@@ -1,6 +1,8 @@
 #!/usr/bin/env zsh
 
 # ===== CONFIGURATION =====
+readonly TODAY="$(date +%Y%m%d_%H%M)"
+readonly LOGFILE="/tmp/link_bins-${TODAY}.log"
 readonly TARGET_DIR="${HOME}/opt/bin"
 readonly SOURCE_BASE="/usr/local/opt"
 readonly DEPTH_MAP=(
@@ -19,18 +21,41 @@ readonly PRIORITY_OVERRIDE=(
     # "python@3.8"
 )
 
-# ===== ERROR HANDLING =====
+# ===== ERROR HANDLING & LOGGING =====
+typeset -i DEBUG=0
+
+log() {
+    local level="$1"
+    shift
+    local msg="[${level}] $*"
+    
+    # 항상 로그 파일에 기록
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ${msg}" >> "$LOGFILE"
+    
+    # DEBUG 모드일 때는 화면에도 출력
+    if ((DEBUG)); then
+        case "$level" in
+            ERROR) echo "$msg" >&2 ;;
+            *) echo "$msg" ;;
+        esac
+    fi
+}
+
 error() {
-    echo "[ERROR] $*" >&2
+    log "ERROR" "$*"
     return 1
 }
 
 warn() {
-    echo "[WARN] $*" >&2
+    log "WARN" "$*"
 }
 
 info() {
-    echo "[INFO] $*"
+    log "INFO" "$*"
+}
+
+debug() {
+    ((DEBUG)) && log "DEBUG" "$*"
 }
 
 # ===== FUNCTION: 실행 가능 파일 필터링 =====
@@ -122,6 +147,8 @@ find_target_dirs() {
 
 # ===== MAIN LOGIC =====
 main() {
+    info "Starting link_bins.zsh with options: DEBUG=${DEBUG}, FORCE=${FORCE}, DRY_RUN=${DRY_RUN}"
+    
     # 의존성 체크
     command -v fd >/dev/null || error "Install 'fd': brew install fd"
     command -v file >/dev/null || error "Command 'file' not found"
@@ -178,11 +205,12 @@ main() {
 (( $+commands[greadlink] )) && alias readlink="greadlink"
 
 # ===== OPTION PARSING =====
-typeset -i FORCE=0 DRY_RUN=0
+typeset -i FORCE=0 DRY_RUN=0 
 while (($#)); do
     case "$1" in
         -f|--force) FORCE=1 ;;
         -d|--dry-run) DRY_RUN=1 ;;
+        --debug) DEBUG=1 ;;
         *) error "Unknown option: $1" ;;
     esac
     shift
