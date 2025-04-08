@@ -64,7 +64,6 @@ run_system_updates() {
     update-gem
     update-pip3
     update-app_store
-    update-office
     update-macos
 
     info "Update_All.command"
