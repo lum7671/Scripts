@@ -3,7 +3,7 @@
 emulate -L zsh
 source ~/.zshrc
 
-export PATH="$HOME/opt/bin:$HOME/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+export PATH="$HOME/opt/bin:$HOME/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 # ===== CONFIGURATION =====
 readonly TODAY="$(date +%Y%m%d_%H%M%S)"
