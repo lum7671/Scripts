@@ -1,5 +1,11 @@
 #!/usr/bin/env zsh
 
+# 로그인 쉘 환경 초기화를 위한 설정
+emulate -L zsh
+source ~/.zshrc
+
+export PATH="$HOME/opt/bin:$HOME/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 # ===== CONFIGURATION =====
 readonly TODAY="$(date +%Y%m%d_%H%M)"
 readonly LOGFILE="/tmp/link_bins-${TODAY}.log"
