@@ -58,13 +58,11 @@ update_git_repos() {
 run_system_updates() {
     info "run update-all.sh"
     source "$HOME/git/MacOS-All-In-One-Update-Script/update-all.sh"
-    update-brew
-    update-atom
-    update-npm
-    update-gem
-    update-pip3
-    update-app_store
-    update-macos
+    update_brew
+    update_npm
+    update_gem
+    update_app_store
+    update_macos
 
     info "Update_All.command"
     TERM=xterm bash "$HOME/git/Update_All/Update_All.command"
