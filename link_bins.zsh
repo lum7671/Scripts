@@ -10,7 +10,7 @@ export PATH="$HOME/opt/bin:$HOME/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/b
 readonly TODAY="$(date +%Y%m%d_%H%M)"
 readonly LOGFILE="/tmp/link_bins-${TODAY}.log"
 readonly TARGET_DIR="${HOME}/opt/bin"
-readonly SOURCE_BASE="/usr/local/opt"
+readonly SOURCE_BASE="/opt/homebrew/opt"
 readonly DEPTH_MAP=(
     "bin:2"
     "uubin:4"

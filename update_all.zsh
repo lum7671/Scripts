@@ -9,21 +9,8 @@ export PATH="$HOME/opt/bin:$HOME/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/b
 readonly TODAY="$(date +%Y%m%d_%H%M%S)"
 readonly LOGFILE="/private/tmp/update_all-${TODAY}.log"
 readonly GITS=(
-    "$HOME/git/Flex/"
-    "$HOME/git/MacOS-All-In-One-Update-Script/"
+    "$HOME/git/KISS/"
     "$HOME/git/Scripts/"
-    "$HOME/git/lum7671blog/"
-    "$HOME/git/pelican-plugins/"
-    "$HOME/git/python-language-server/"
-    "$HOME/git/Update_All/"
-    "$HOME/git/Hyperpipe/"
-    "$HOME/git/dotfiles/"
-    "$HOME/git/ff2mpv/"
-    "$HOME/git/mopster/"
-    "$HOME/git/my-dotfiles/"
-    "$HOME/git/org-mode/"
-    "$HOME/git/worg/"
-    "$HOME/git/ytfzf/"
     "$HOME/git/minutes_diff/"
 )
 
@@ -32,9 +19,33 @@ info() {
     echo "==================================>" "$@"
 }
 
-update_rust_packages() {
-    info "update all rust packages"
-    cargo install-update -a
+# System Update
+update() {
+    # Check if curl is available
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "Error: curl is required but not installed. Please install curl." >&2
+        return
+    fi
+
+    # Check internet connection by pinging a reliable server
+    TEST_URL="https://www.google.com"
+
+    # Use curl to check the connection
+    TEST_RESP=$(curl -Is --connect-timeout 5 --max-time 10 "${TEST_URL}" 2>/dev/null | head -n 1)
+
+    # Check if response is empty
+    if [ -z "${TEST_RESP}" ]; then
+        echo "No Internet Connection!!!" >&2
+        return
+    fi
+
+    # Check for "200" in the response
+    if ! printf "%s" "${TEST_RESP}" | grep -q "200"; then
+        echo "Internet is not working!!!" >&2
+        return
+    fi
+
+    curl -fsSL https://raw.githubusercontent.com/andmpel/MacOS-All-In-One-Update-Script/HEAD/update-all.sh | zsh
 }
 
 update_git_repos() {
@@ -55,25 +66,11 @@ update_git_repos() {
     cd "$current_dir"
 }
 
-run_system_updates() {
-    info "run update-all.sh"
-    source "$HOME/git/MacOS-All-In-One-Update-Script/update-all.sh"
-    update_brew
-    update_npm
-    update_gem
-    update_app_store
-    update_macos
-
-    info "Update_All.command"
-    TERM=xterm bash "$HOME/git/Update_All/Update_All.command"
-}
-
 # ===== MAIN =====
 main() {
     (
-        update_rust_packages
+        update
         update_git_repos
-        run_system_updates
         info "The End !!!"
     ) > "$LOGFILE" 2>&1
 }
