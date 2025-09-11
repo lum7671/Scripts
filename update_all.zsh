@@ -1,6 +1,10 @@
 #!/usr/bin/env zsh
 # 로그인 쉘 환경 초기화를 위한 설정
 emulate -L zsh
+
+# cron 환경에서 TERM 변수 설정 (terminfo 에러 방지)
+export TERM=${TERM:-dumb}
+
 source ~/.zshrc
 
 export PATH="$HOME/opt/bin:$HOME/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
