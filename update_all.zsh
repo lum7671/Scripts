@@ -124,7 +124,7 @@ update_cargo() {
         if command -v rustup >/dev/null 2>&1; then
             rustup update --no-self-update
         fi
-        
+
         # Update cargo packages
         if command -v cargo-install-update >/dev/null 2>&1; then
             cargo install-update -a
@@ -140,29 +140,29 @@ update_cargo() {
 # Node.js/NPM Update
 update_npm() {
     info "Updating Node.js and NPM packages..."
-    
+
     # Initialize NVM (handles lazy loading)
     export NVM_DIR="$HOME/.nvm"
     if [[ -s "$NVM_DIR/nvm.sh" ]]; then
         source "$NVM_DIR/nvm.sh"
         source "$NVM_DIR/bash_completion" 2>/dev/null || true
     fi
-    
+
     # Try to use npm (this will trigger lazy loading if configured)
     if npm --version >/dev/null 2>&1; then
         # Update npm itself with --silent flag
         npm install -g npm@latest --silent
-        
+
         # Update global packages with --silent flag
         npm update -g --silent
-        
+
         # Update to latest LTS Node.js if nvm is available
         if command -v nvm >/dev/null 2>&1; then
             nvm install --lts --silent
             nvm use --lts --silent
             nvm alias default lts/* --silent
         fi
-        
+
         success "Node.js/NPM updated"
     else
         skip "NPM not available or not properly configured"
@@ -172,7 +172,7 @@ update_npm() {
 # Ruby (rbenv) Update
 update_ruby() {
     info "Updating Ruby environment..."
-    
+
     # Try to use rbenv (this will trigger lazy loading if configured)
     if rbenv --version >/dev/null 2>&1; then
         # Update rbenv
@@ -181,14 +181,14 @@ update_ruby() {
             cd "$HOME/.rbenv" && git pull
             cd "$current_dir"
         fi
-        
+
         # Update ruby-build
         if [[ -d "$HOME/.rbenv/plugins/ruby-build" ]]; then
             local current_dir=$(pwd)
             cd "$HOME/.rbenv/plugins/ruby-build" && git pull
             cd "$current_dir"
         fi
-        
+
         success "Ruby environment updated"
     else
         skip "rbenv not available or not properly configured"
@@ -198,7 +198,7 @@ update_ruby() {
 # Java (jenv) Update
 update_java() {
     info "Updating Java environment..."
-    
+
     # Try to use jenv (this will trigger lazy loading if configured)
     if jenv --version >/dev/null 2>&1; then
         # Update jenv
@@ -207,7 +207,7 @@ update_java() {
             cd "$HOME/.jenv" && git pull
             cd "$current_dir"
         fi
-        
+
         success "Java environment updated"
     else
         skip "jenv not available or not properly configured"
@@ -217,7 +217,7 @@ update_java() {
 # .NET Update
 update_dotnet() {
     info "Updating .NET..."
-    
+
     if command -v dotnet >/dev/null 2>&1; then
         # Update global .NET tools
         dotnet tool list -g | tail -n +3 | awk '{print $1}' | xargs -I {} dotnet tool update -g {}
@@ -230,15 +230,21 @@ update_dotnet() {
 # Python pip packages update
 update_pip() {
     info "Updating pip packages..."
-    
+
     # Use the python3 from PATH (prioritizes $HOME versions)
-    local python_cmd=$(which python3 2>/dev/null)
+    local python_cmd
+    if [[ -x "$HOME/.rye/shims/python3" ]]; then
+        python_cmd="$HOME/.rye/shims/python3"
+    else
+        python_cmd=$(which python3 2>/dev/null)
+    fi
+
     if [[ -n "$python_cmd" ]]; then
         info "Using Python: $python_cmd"
-        
+
         # Update pip itself
         $python_cmd -m pip install --upgrade pip --quiet
-        
+
         # Update outdated packages with --quiet flag to reduce output
         $python_cmd -m pip list --outdated --format=freeze | grep -v '^\-e' | cut -d = -f 1 | xargs -n1 $python_cmd -m pip install -U --quiet 2>/dev/null || true
         success "Pip packages updated"
@@ -250,25 +256,25 @@ update_pip() {
 # Oh My Zsh Update
 update_ohmyzsh() {
     info "Updating Oh My Zsh and plugins..."
-    
+
     if [[ -d "$HOME/.oh-my-zsh" ]]; then
         cd "$HOME/.oh-my-zsh" && git pull
     fi
-    
+
     # Update zgenom if available
     if [[ -d "$HOME/.zgenom" ]]; then
         cd "$HOME/.zgenom" && git pull
         # Reset zgenom to force plugin updates
         zgenom reset 2>/dev/null || true
     fi
-    
+
     success "Zsh environment updated"
 }
 
 # Emacs packages update (if Doom Emacs is installed)
 update_emacs() {
     info "Updating Emacs packages..."
-    
+
     if [[ -d "$HOME/.config/emacs" ]] && command -v doom >/dev/null 2>&1; then
         doom upgrade -!
         doom sync
@@ -283,18 +289,18 @@ update_emacs() {
 # Comprehensive update function
 update() {
     info "Starting comprehensive system update..."
-    
+
     # Check internet connection first
     if ! check_internet; then
         error "Internet connection required for updates"
         return 1
     fi
-    
+
     # System updates
     update_macos
     update_homebrew
     update_mas
-    
+
     # Development tools
     update_rye
     update_cargo
@@ -303,11 +309,11 @@ update() {
     update_java
     update_dotnet
     update_pip
-    
+
     # Shell and editor
     update_ohmyzsh
     update_emacs
-    
+
     info "All updates completed!"
 }
 
