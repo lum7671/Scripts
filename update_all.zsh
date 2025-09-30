@@ -6,14 +6,21 @@ emulate -L zsh
 export TERM=${TERM:-dumb}
 
 # 로그인 쉘 환경 로드 (PATH 포함)
-source ~/.zshrc
+# 비대화(non-interactive) 실행 시 ~/.zshrc 내에서 터미널 제목(escape sequence) 등을 출력하는
+# 구성이 stdout 으로 섞여 나와 로그파일 경로 캡처를 오염시키는 문제가 있으므로 출력은 억제
+if [[ -f "$HOME/.zshrc" ]]; then
+    # stdout/stderr 모두 무시 (PATH, 함수 정의는 환경에 남음)
+    source "$HOME/.zshrc" >/dev/null 2>&1 || true
+fi
 
 # 로그인 쉘 환경의 PATH를 그대로 사용
 # $HOME 우선 순위 PATH가 .zshrc에서 이미 설정됨
 
 # ===== CONFIGURATION =====
-readonly TODAY="$(date +%Y%m%d_%H%M%S)"
-readonly LOGFILE="/private/tmp/update_all-${TODAY}.log"
+# 날짜/시간 태그. 필요 시 외부에서 TODAY_OVERRIDE 로 강제 지정 가능
+TODAY="${TODAY_OVERRIDE:-$(date +%Y%m%d_%H%M%S)}"
+# 로그 파일 경로. LOGFILE_OVERRIDE 로 사용자 지정 가능
+LOGFILE="${LOGFILE_OVERRIDE:-/private/tmp/update_all-${TODAY}.log}"
 readonly GITS=(
     "$HOME/git/KISS/"
     "$HOME/git/Scripts/"
@@ -148,22 +155,46 @@ update_npm() {
         source "$NVM_DIR/bash_completion" 2>/dev/null || true
     fi
 
-    # Try to use npm (this will trigger lazy loading if configured)
-    if npm --version >/dev/null 2>&1; then
-        # Update npm itself with --silent flag
-        npm install -g npm@latest --silent
-
-        # Update global packages with --silent flag
-        npm update -g --silent
-
-        # Update to latest LTS Node.js if nvm is available
-        if command -v nvm >/dev/null 2>&1; then
-            nvm install --lts --silent
-            nvm use --lts --silent
-            nvm alias default lts/* --silent
+    # If nvm is available, prefer managing Node via nvm
+    if command -v nvm >/dev/null 2>&1; then
+        # Handle NPM_CONFIG_PREFIX incompatibility with nvm
+        local _had_prefix=""
+        if [[ -n "${NPM_CONFIG_PREFIX:-}" ]]; then
+            info "Detected NPM_CONFIG_PREFIX=${NPM_CONFIG_PREFIX}; temporarily unsetting for nvm compatibility"
+            _had_prefix="$NPM_CONFIG_PREFIX"
+            unset NPM_CONFIG_PREFIX
         fi
 
-        success "Node.js/NPM updated"
+        # Install & switch to latest LTS (remove unsupported --silent flags)
+        nvm install --lts || {
+            error "Failed to install latest LTS via nvm"; return 1;
+        }
+        nvm use --lts || {
+            error "Failed to switch to latest LTS via nvm"; return 1;
+        }
+        # Quote pattern to avoid zsh glob expansion error (was: lts/*)
+        nvm alias default 'lts/*' 2>/dev/null || true
+
+        # Now npm is the one bundled with LTS; upgrade npm & globals
+        if command -v npm >/dev/null 2>&1; then
+            npm install -g npm@latest --quiet 2>/dev/null || true
+            npm update -g --quiet 2>/dev/null || true
+        fi
+
+        # Restore prefix if it existed
+        if [[ -n "$_had_prefix" ]]; then
+            export NPM_CONFIG_PREFIX="$_had_prefix"
+        fi
+
+        success "Node.js/NPM updated (via nvm)"
+        return 0
+    fi
+
+    # Fallback: no nvm, but maybe npm exists globally
+    if command -v npm >/dev/null 2>&1; then
+        npm install -g npm@latest --quiet 2>/dev/null || true
+        npm update -g --quiet 2>/dev/null || true
+        success "NPM global packages updated (nvm not found)"
     else
         skip "NPM not available or not properly configured"
     fi
@@ -342,11 +373,51 @@ update_git_repos() {
 
 # ===== MAIN =====
 main() {
+    # 로그 파일이 확실히 존재하도록 사전 생성 (퍼미션/경로 문제 감지)
+    if ! : >"$LOGFILE" 2>/dev/null; then
+        echo "ERROR: Cannot create log file at $LOGFILE" >&2
+        # mktemp fallback
+        LOGFILE=$(mktemp /private/tmp/update_all-fallback-XXXXXX.log 2>/dev/null || mktemp /tmp/update_all-fallback-XXXXXX.log)
+        echo "INFO: Using fallback log file: $LOGFILE" >&2
+        : >"$LOGFILE" || true
+    fi
     (
-        update
-        update_git_repos
-        info "The End !!!"
+        if [[ -n "${UPDATE_ONLY:-}" ]]; then
+            info "Selective update mode: $UPDATE_ONLY"
+            local IFS=','
+            for fn in $UPDATE_ONLY; do
+                if typeset -f "$fn" >/dev/null 2>&1; then
+                    info "Running $fn ..."
+                    "$fn" || error "$fn failed"
+                else
+                    error "Unknown function: $fn"
+                fi
+            done
+            info "Selective update completed"
+        else
+            update
+            update_git_repos
+            info "The End !!!"
+        fi
     ) >"$LOGFILE" 2>&1
+    # 실행 종료 후 존재 여부 재확인
+    if [[ ! -f "$LOGFILE" ]]; then
+        echo "ERROR: Log file unexpectedly missing: $LOGFILE" >&2
+    fi
+    # ESC / 제어문자가 혹시라도 섞였을 경우 제거 후 출력
+    # (대부분은 위에서 ~/.zshrc 출력 억제로 필요 없지만 안전장치)
+    local _clean_path
+    _clean_path=$(printf '%s' "$LOGFILE" | tr -d '\033' )
+    # 옵션: LOG_PATH_FILE 지정 시 파일로도 경로 저장
+    if [[ -n "${LOG_PATH_FILE:-}" ]]; then
+        printf '%s' "$_clean_path" >"$LOG_PATH_FILE" 2>/dev/null || true
+    fi
+    # 옵션: PRINT_LOG_MARKER=1 이면 마커 포함 출력 (preexec 오염 시 파싱 용이)
+    if [[ -n "${PRINT_LOG_MARKER:-}" ]]; then
+        echo "__UPDATE_ALL_LOG__ $_clean_path"
+    else
+        echo "$_clean_path"
+    fi
 }
 
 main "$@"
