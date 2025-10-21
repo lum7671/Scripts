@@ -251,7 +251,12 @@ update_dotnet() {
 
     if command -v dotnet >/dev/null 2>&1; then
         # Update global .NET tools
-        dotnet tool list -g | tail -n +3 | awk '{print $1}' | xargs -I {} dotnet tool update -g {}
+        local tools=$(dotnet tool list -g | tail -n +3 | awk '{print $1}')
+        if [[ -n "$tools" ]]; then
+            echo "$tools" | xargs -I {} dotnet tool update -g {}
+        else
+            info "No .NET global tools installed"
+        fi
         success ".NET tools updated"
     else
         skip ".NET not installed"
@@ -277,7 +282,7 @@ update_pip() {
         $python_cmd -m pip install --upgrade pip --quiet
 
         # Update outdated packages with --quiet flag to reduce output
-        $python_cmd -m pip list --outdated --format=freeze | grep -v '^\-e' | cut -d = -f 1 | xargs -n1 $python_cmd -m pip install -U --quiet 2>/dev/null || true
+        $python_cmd -m pip list --outdated | tail -n +3 | awk '{print $1}' | xargs -n1 $python_cmd -m pip install -U --quiet 2>/dev/null || true
         success "Pip packages updated"
     else
         skip "python3 not found in PATH"
@@ -356,6 +361,22 @@ update_git_repos() {
         if [[ -d "$repo" ]]; then
             echo "Updating $repo..."
             cd "$repo"
+            
+            # Check if directory is a git repository
+            if ! git rev-parse --git-dir >/dev/null 2>&1; then
+                echo "Warning: Not a git repository - $repo"
+                continue
+            fi
+            
+            # Check for uncommitted changes
+            if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+                echo "Warning: Uncommitted changes in $repo - skipping pull"
+                git fetch --all --prune --jobs=10 2>/dev/null || {
+                    echo "Warning: Failed to fetch $repo"
+                }
+                continue
+            fi
+            
             # --no-edit 옵션으로 merge 커밋 메시지 편집기 열리지 않게 방지
             git pull --no-edit 2>/dev/null || {
                 echo "Warning: Failed to pull $repo (possible conflicts or network issues)"
