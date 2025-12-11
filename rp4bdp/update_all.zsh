@@ -169,7 +169,19 @@ update_zig() {
     fi
     
     # Run manage_zig.sh with skip-test for faster updates on DietPi
-    if "$manage_zig_path" --skip-test update; then
+    # Capture output to check for success markers
+    local output
+    output=$("$manage_zig_path" --skip-test update 2>&1)
+    local exit_code=$?
+    
+    # Print output from manage_zig.sh
+    echo "$output"
+    
+    # Check if Zig is already up-to-date or was successfully updated (look for ✅ markers)
+    if echo "$output" | grep -q "✅"; then
+        success "Zig compiler status verified"
+        return 0
+    elif [[ $exit_code -eq 0 ]]; then
         success "Zig compiler updated"
         return 0
     else
