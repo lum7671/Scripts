@@ -2,7 +2,6 @@
 set -e
 
 STABLE_BIN="/usr/local/bin/zig"
-DEV_BIN="/usr/local/bin/zig-dev"
 JSON_URL="https://ziglang.org/download/index.json"
 WORK_DIR="/tmp/zig-install-$$"
 
@@ -66,7 +65,8 @@ while [[ "$1" == --* ]]; do
 done
 
 # Parse action argument
-ACTION=${1:-"status"}
+ACTION=${1:-"help"}
+TARGET_VERSION=${2:-""}  # 선택적 버전 인자
 
 # Verify file integrity with SHA256 and size
 verify_integrity() {
@@ -113,23 +113,72 @@ get_installed_version() {
     fi
 }
 
+# Check if version exists in JSON
+version_exists() {
+    local version="$1"
+    if [ "$version" = "master" ]; then
+        curl -s "$JSON_URL" | jq -e '.master' >/dev/null 2>&1
+    else
+        curl -s "$JSON_URL" | jq -e ".\"$version\"" >/dev/null 2>&1
+    fi
+}
+
+# Get JSON key for version
+get_json_key() {
+    local version="$1"
+    if [ "$version" = "master" ]; then
+        echo "master"
+    else
+        echo "$version"
+    fi
+}
+
 test_build() {
     local zig_bin="$1"
+    local verbose="${2:-0}"  # 0 = quiet, 1 = verbose
     local test_dir="$(mktemp -d)"
     
     cd "$test_dir"
     echo 'const std=@import("std");pub fn main()void{std.debug.print("OK\n",.{});}' > test.zig
     
+    if [ "$verbose" = "1" ]; then
+        echo "📂 테스트 디렉토리: $test_dir"
+        echo "🔧 Zig 바이너리: $zig_bin"
+        echo "📝 테스트 코드:"
+        cat test.zig
+        echo ""
+        echo "🏗️  빌드 실행 중..."
+        echo "───────────────────────────────────────"
+    fi
+    
     # Try to build with timeout if available
     local result=1
-    if command -v timeout >/dev/null 2>&1; then
-        if timeout 10s "$zig_bin" build-exe test.zig 2>/dev/null; then
-            result=0
-        fi
+    local stderr_file="$test_dir/stderr.txt"
+    
+    # Build without timeout, wait for completion
+    if [ "$verbose" = "1" ]; then
+        "$zig_bin" build-exe test.zig 2>&1 | tee "$stderr_file"
+        result=${PIPESTATUS[0]}
     else
-        # No timeout command, just try to build
-        if "$zig_bin" build-exe test.zig 2>/dev/null; then
-            result=0
+        "$zig_bin" build-exe test.zig 2>"$stderr_file"
+        result=$?
+    fi
+    
+    if [ "$verbose" = "1" ]; then
+        echo "───────────────────────────────────────"
+        echo "📊 종료 코드: $result"
+        if [ $result -eq 0 ]; then
+            echo "✅ 빌드 성공!"
+            if [ -f "test" ]; then
+                echo "🚀 실행 테스트:"
+                ./test
+            fi
+        else
+            echo "❌ 빌드 실패!"
+            if [ -s "$stderr_file" ]; then
+                echo "📄 에러 메시지:"
+                cat "$stderr_file"
+            fi
         fi
     fi
     
@@ -177,6 +226,13 @@ download_and_install() {
         sudo cp "$target_bin" "${target_bin}.bak"
     fi
     
+    # Backup existing standard library
+    if [ -d "/usr/local/lib/zig" ]; then
+        echo "💾 표준 라이브러리 백업: /usr/local/lib/zig.bak"
+        sudo rm -rf /usr/local/lib/zig.bak
+        sudo cp -r /usr/local/lib/zig /usr/local/lib/zig.bak
+    fi
+    
     # Download
     local archive="zig-download.tar.xz"
     echo "⬇️  다운로드: $url"
@@ -206,16 +262,34 @@ download_and_install() {
         return 1
     fi
     
-    # Test build before installation (optional)
+    # Install standard library first
+    if [ -d "$extracted_dir/lib" ]; then
+        echo "📚 표준 라이브러리 설치 중: /usr/local/lib/zig"
+        sudo mkdir -p /usr/local/lib
+        sudo rm -rf /usr/local/lib/zig
+        sudo cp -r "$extracted_dir/lib" /usr/local/lib/zig
+    fi
+    
+    # Install binary
+    echo "📥 바이너리 설치 중: $target_bin"
+    sudo cp "$extracted_dir/zig" "$target_bin"
+    sudo chmod 755 "$target_bin"
+    
+    # Test build after installation (optional)
     if [ $SKIP_BUILD_TEST -eq 0 ]; then
         echo "🧪 빌드 테스트 중..."
-        if ! test_build "$extracted_dir/zig"; then
-            echo "❌빌드 테스트 실패" >&2
-            echo "💡 수동 테스트: $extracted_dir/zig version" >&2
+        if ! test_build "$target_bin"; then
+            echo "❌ 빌드 테스트 실패" >&2
+            echo "💡 수동 테스트: $target_bin version" >&2
             # Try to get version at least
-            if "$extracted_dir/zig" version 2>/dev/null; then
+            if "$target_bin" version 2>/dev/null; then
                 echo "⚠️  버전 표시는 가능하지만 빌드 실패." >&2
                 echo "💡 건너뛰려면: $0 --skip-test $ACTION" >&2
+            fi
+            # Rollback
+            if [ -f "${target_bin}.bak" ]; then
+                echo "🔄 이전 버전 복원 중..." >&2
+                sudo cp "${target_bin}.bak" "$target_bin"
             fi
             return 1
         fi
@@ -223,16 +297,16 @@ download_and_install() {
         echo "⏭️  빌드 테스트 건너뜀 (--skip-test)"
         # At least check version
         echo "🔍 버전 확인 중..."
-        if ! "$extracted_dir/zig" version; then
+        if ! "$target_bin" version; then
             echo "❌ zig 실행 불가" >&2
+            # Rollback
+            if [ -f "${target_bin}.bak" ]; then
+                echo "🔄 이전 버전 복원 중..." >&2
+                sudo cp "${target_bin}.bak" "$target_bin"
+            fi
             return 1
         fi
     fi
-    
-    # Install
-    echo "📥 설치 중: $target_bin"
-    sudo cp "$extracted_dir/zig" "$target_bin"
-    sudo chmod 755 "$target_bin"
     
     echo "✅ 설치 완료: $version"
     $target_bin version
@@ -241,44 +315,42 @@ download_and_install() {
 }
 
 case "$ACTION" in
-    "update-stable")
-        STABLE_VER=$(curl -s "$JSON_URL" | jq -r 'to_entries[] | select(.key | test("^\\d+(\\.\\d+)*$")) | .key' | sort -V | tail -1)
-        echo "📥 최신 stable: $STABLE_VER"
+    "update")
+        # Determine which version to install
+        if [ -z "$TARGET_VERSION" ]; then
+            # No version specified, use latest stable version
+            echo "📥 버전을 지정하지 않았으므로 최신 안정 버전 설치합니다"
+            TARGET_VERSION=$(curl -s "$JSON_URL" | jq -r 'to_entries[] | select(.key | test("^\\d+(\\.\\d+)*$")) | .key' | sort -V | tail -1)
+            if [ -z "$TARGET_VERSION" ]; then
+                echo "❌ 최신 버전을 조회할 수 없습니다"
+                exit 1
+            fi
+            echo "📌 선택된 버전: $TARGET_VERSION"
+        fi
         
-        if download_and_install "$STABLE_VER" "$STABLE_BIN" "$STABLE_VER"; then
-            echo "✅ zig stable 업데이트 성공"
+        # Validate version exists
+        if ! version_exists "$TARGET_VERSION"; then
+            echo "❌ 버전을 찾을 수 없음: $TARGET_VERSION"
+            exit 1
+        fi
+        
+        # Get version info
+        if [ "$TARGET_VERSION" = "master" ]; then
+            DISPLAY_VER=$(curl -s "$JSON_URL" | jq -r '.master.version')
         else
-            echo "❌ zig stable 업데이트 실패"
+            DISPLAY_VER="$TARGET_VERSION"
+        fi
+        
+        JSON_KEY=$(get_json_key "$TARGET_VERSION")
+        echo "📥 최신 버전: $DISPLAY_VER"
+        
+        if download_and_install "$DISPLAY_VER" "$STABLE_BIN" "$JSON_KEY"; then
+            echo "✅ Zig 업데이트 성공"
+        else
+            echo "❌ Zig 업데이트 실패"
             if [ -f "${STABLE_BIN}.bak" ]; then
                 echo "🔄 이전 버전 복원 중..."
                 sudo cp "${STABLE_BIN}.bak" "$STABLE_BIN"
-            fi
-            exit 1
-        fi
-        ;;
-
-    "update-dev")
-        DEV_VER=$(curl -s "$JSON_URL" | jq -r '.master.version // empty')
-        echo "📥 최신 dev: $DEV_VER"
-        
-        # Check for known unstable versions
-        if [[ "$DEV_VER" == 0.16* ]]; then
-            echo "⚠️  경고: 0.16.0-dev는 불안정할 수 있습니다"
-            read -p "계속 진행하시겠습니까? (y/N): " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                echo "취소됨"
-                exit 0
-            fi
-        fi
-        
-        if download_and_install "$DEV_VER" "$DEV_BIN" "master"; then
-            echo "✅ zig-dev 업데이트 성공"
-        else
-            echo "❌ zig-dev 업데이트 실패"
-            if [ -f "${DEV_BIN}.bak" ]; then
-                echo "🔄 이전 버전 복원 중..."
-                sudo cp "${DEV_BIN}.bak" "$DEV_BIN"
             fi
             exit 1
         fi
@@ -305,25 +377,6 @@ case "$ACTION" in
         else
             echo "- zig (stable): ❌ 설치되지 않음"
         fi
-        
-        echo ""
-        
-        if [ -f "$DEV_BIN" ]; then
-            echo -n "- zig-dev: "
-            if $DEV_BIN version 2>/dev/null; then
-                cd /tmp
-                if test_build "$DEV_BIN" 2>/dev/null; then
-                    echo "  상태: ✅ 정상"
-                else
-                    echo "  상태: ⚠️  버전 표시는 되지만 빌드 실패"
-                fi
-            else
-                echo "  상태: ❌ 실행 불가"
-            fi
-            [ -f "${DEV_BIN}.bak" ] && echo "  백업: ${DEV_BIN}.bak 존재"
-        else
-            echo "- zig-dev: ❌ 설치되지 않음"
-        fi
         ;;
 
     "list")
@@ -332,37 +385,62 @@ case "$ACTION" in
         echo "Stable 버전:"
         curl -s "$JSON_URL" | jq -r 'to_entries[] | select(.key | test("^\\d+(\\.\\d+)*$")) | "  - \(.key) (릴리스: \(.value.date))"' | sort -V | tail -10
         echo ""
-        echo "Dev 버전:"
-        echo "  - $(curl -s "$JSON_URL" | jq -r '.master.version') (빌드: $(curl -s "$JSON_URL" | jq -r '.master.date'))"
-        echo ""
         echo "현재 플랫폼: $PLATFORM"
+        ;;
+    
+    "build-test")
+        echo "=== Zig 빌드 테스트 ==="
+        echo ""
+        
+        if [ -f "$STABLE_BIN" ]; then
+            echo "🔍 stable 버전 테스트: $STABLE_BIN"
+            $STABLE_BIN version
+            echo ""
+            if test_build "$STABLE_BIN" 1; then
+                echo "✅ stable 빌드 테스트 성공"
+            else
+                echo "❌ stable 빌드 테스트 실패"
+            fi
+            echo ""
+        else
+            echo "⚠️  stable 버전 미설치"
+            echo ""
+        fi
         ;;
     
     "clean")
         echo "=== 백업 파일 정리 ==="
         [ -f "${STABLE_BIN}.bak" ] && sudo rm -v "${STABLE_BIN}.bak" || echo "stable 백업 없음"
-        [ -f "${DEV_BIN}.bak" ] && sudo rm -v "${DEV_BIN}.bak" || echo "dev 백업 없음"
         ;;
     
-    *)
-        echo "사용법: $0 [옵션] {update-stable|update-dev|status|list|clean}"
+    "help")
+        echo "사용법: $0 [옵션] {update|status|list|build-test|clean|help}"
         echo ""
         echo "옵션:"
         echo "  --skip-test    - 빌드 테스트 건너뛰기 (빠른 설치)"
         echo "  --force        - 같은 버전이어도 강제 재설치"
         echo ""
         echo "명령어:"
-        echo "  update-stable  - 최신 안정 버전 설치"
-        echo "  update-dev     - 최신 개발 버전 설치"
+        echo "  update <ver>   - 지정된 Zig 버전 설치 (예: update 0.15.2, update master)"
         echo "  status         - 설치된 버전 상태 확인"
-        echo "  list           - 사용 가능한 버전 목록"
+        echo "  list           - 사용 가능한 Zig 버전 목록"
+        echo "  build-test     - 빌드 테스트 실행 (디버깅용)"
         echo "  clean          - 백업 파일 정리"
+        echo "  help           - 이 도움말 표시"
         echo ""
         echo "예제:"
-        echo "  $0 update-stable                    # 빌드 테스트 포함"
-        echo "  $0 --skip-test update-stable        # 빌드 테스트 건너뛰기"
-        echo "  $0 --force update-stable            # 강제 재설치"
-        echo "  $0 --skip-test --force update-stable # 조합 사용"
+        echo "  $0 update 0.15.2                    # 특정 버전 설치 (빌드 테스트 포함)"
+        echo "  $0 --skip-test update 0.15.2        # 특정 버전 설치 (빌드 테스트 건너뛰기)"
+        echo "  $0 --force update 0.15.2            # 강제 재설치"
+        echo "  $0 update master                    # 최신 개발 버전 설치"
+        echo ""
+        echo "버전 확인:"
+        echo "  $0 list"
+        ;;
+    
+    *)
+        echo "❌ 알 수 없는 명령어: $ACTION" >&2
+        echo "💡 도움말: $0 help" >&2
         exit 1
         ;;
 esac
