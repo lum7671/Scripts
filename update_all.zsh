@@ -392,8 +392,39 @@ update_git_repos() {
     cd "$current_dir"
 }
 
+# Summarize log and send email with upsum
+run_upsum() {
+    info "Summarizing log and sending email with upsum..."
+    local upsum_dir="/home/dietpi/git/upsum"
+
+    if [[ ! -d "$upsum_dir" ]]; then
+        error "upsum directory not found at $upsum_dir"
+        return 1
+    fi
+
+    if ! command -v rye >/dev/null 2>&1; then
+        error "rye command not found, cannot run upsum"
+        return 1
+    fi
+
+    local current_dir
+    current_dir=$(pwd)
+    cd "$upsum_dir"
+    info "Running upsum..."
+    rye run upsum --log-file "$LOGFILE"
+    success "upsum run completed."
+    cd "$current_dir"
+}
+
 # ===== MAIN =====
 main() {
+    local no_mail=0
+    for arg in "$@"; do
+        if [[ "$arg" == "--no-mail" ]]; then
+            no_mail=1
+        fi
+    done
+
     # 로그 파일이 확실히 존재하도록 사전 생성 (퍼미션/경로 문제 감지)
     if ! : >"$LOGFILE" 2>/dev/null; then
         echo "ERROR: Cannot create log file at $LOGFILE" >&2
@@ -418,6 +449,11 @@ main() {
         else
             update
             update_git_repos
+            if (( ! no_mail )); then
+                run_upsum
+            else
+                info "Skipping email summary (--no-mail specified)."
+            fi
             info "The End !!!"
         fi
     ) >"$LOGFILE" 2>&1

@@ -520,6 +520,30 @@ clean_caches_aggressive() {
     info "  - DietPi-Backup can be run to optimize system backup"
 }
 
+# Summarize log and send email with upsum
+run_upsum() {
+    info "Summarizing log and sending email with upsum..."
+    local upsum_dir="/home/dietpi/git/upsum"
+
+    if [[ ! -d "$upsum_dir" ]]; then
+        error "upsum directory not found at $upsum_dir"
+        return 1
+    fi
+
+    if ! command -v rye >/dev/null 2>&1; then
+        error "rye command not found, cannot run upsum"
+        return 1
+    fi
+
+    local current_dir
+    current_dir=$(pwd)
+    cd "$upsum_dir"
+    info "Running upsum..."
+    rye run upsum --log-file "$LOGFILE"
+    success "upsum run completed."
+    cd "$current_dir"
+}
+
 # ===== MAIN ORCHESTRATION =====
 
 # Print summary report of update results
@@ -600,6 +624,7 @@ main() {
     local ONLY_CLEAN=false
     local AGGRESSIVE_CLEAN=false
     local SKIP_ZIG_TEST=false
+    local no_mail=false
 
     # Parse command-line arguments
     for arg in "$@"; do
@@ -616,6 +641,10 @@ main() {
                 SKIP_ZIG_TEST=true
                 shift
                 ;;
+            --no-mail)
+                no_mail=true
+                shift
+                ;;
             --help|-h)
                 echo "Usage: $0 [options]"
                 echo ""
@@ -623,6 +652,7 @@ main() {
                 echo "  --only-all-clean        Run only cache cleanup (basic + caches)"
                 echo "  --aggressive-clean      Run aggressive cleanup (reclaim max space, slower)"
                 echo "  --skip-zig-test         Skip Zig compiler build test (faster)"
+                echo "  --no-mail               Skip sending email summary"
                 echo "  --help, -h              Show this help message"
                 echo ""
                 echo "Environment variables:"
@@ -674,6 +704,11 @@ main() {
             info "Selective update completed"
         else
             run_all_updates
+            if [[ "$no_mail" = false ]]; then
+                run_upsum
+            else
+                info "Skipping email summary (--no-mail specified)."
+            fi
         fi
         info "Log file created at: $LOGFILE"
     ) >"$LOGFILE" 2>&1
