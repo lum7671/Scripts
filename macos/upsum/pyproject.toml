@@ -1,0 +1,31 @@
+[project]
+name = "upsum"
+version = "0.5.0"
+description = "Add your description here"
+authors = [
+    { name = "Nate Doohyun Jang", email = "1220430+lum7671@users.noreply.github.com " }
+]
+dependencies = [
+    "google-genai",
+    "python-dotenv",
+    "markdown-it-py>=4.0.0",
+]
+readme = "README.md"
+requires-python = ">= 3.8"
+
+[project.scripts]
+"upsum" = "upsum.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/upsum"]
