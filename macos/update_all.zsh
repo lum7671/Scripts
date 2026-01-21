@@ -115,18 +115,14 @@ update_mas() {
     fi
 }
 
-# Python (Rye) Update
-update_rye() {
-    info "Updating Rye (Python toolchain)..."
-    if command -v rye >/dev/null 2>&1; then
-        rye self update
-        # Update global tools installed via rye (force reinstall without prompts)
-        if rye list 2>/dev/null | grep -q "httpie"; then
-            rye install httpie --force
-        fi
-        success "Rye updated"
+# Python (uv) Update
+update_uv() {
+    info "Updating uv (Python toolchain)..."
+    if command -v uv >/dev/null 2>&1; then
+        uv self update
+        success "uv updated"
     else
-        skip "Rye not installed"
+        skip "uv not installed"
     fi
 }
 
@@ -285,10 +281,10 @@ update_dotnet() {
 update_pip() {
     info "Updating pip packages..."
 
-    # Use the python3 from PATH (prioritizes $HOME versions)
+    # Use uv to manage Python packages
     local python_cmd
-    if [[ -x "$HOME/.rye/shims/python3" ]]; then
-        python_cmd="$HOME/.rye/shims/python3"
+    if command -v uv >/dev/null 2>&1; then
+        python_cmd="uv run python3"
     else
         python_cmd=$(which python3 2>/dev/null)
     fi
@@ -296,11 +292,16 @@ update_pip() {
     if [[ -n "$python_cmd" ]]; then
         info "Using Python: $python_cmd"
 
-        # Update pip itself
-        $python_cmd -m pip install --upgrade pip --quiet
-
-        # Update outdated packages with --quiet flag to reduce output
-        $python_cmd -m pip list --outdated | tail -n +3 | awk '{print $1}' | xargs -n1 $python_cmd -m pip install -U --quiet 2>/dev/null || true
+        if command -v uv >/dev/null 2>&1; then
+            # Use uv pip for package management
+            uv pip install --upgrade pip --quiet 2>/dev/null || true
+            # Update outdated packages
+            uv pip list --outdated 2>/dev/null | tail -n +3 | awk '{print $1}' | xargs -n1 uv pip install -U --quiet 2>/dev/null || true
+        else
+            # Fallback to standard pip if uv is not available
+            $python_cmd -m pip install --upgrade pip --quiet
+            $python_cmd -m pip list --outdated | tail -n +3 | awk '{print $1}' | xargs -n1 $python_cmd -m pip install -U --quiet 2>/dev/null || true
+        fi
         success "Pip packages updated"
     else
         skip "python3 not found in PATH"
@@ -356,7 +357,7 @@ update() {
     update_mas
 
     # Development tools
-    update_rye
+    update_uv
     update_cargo
     update_npm
     update_ruby
@@ -422,9 +423,9 @@ run_upsum() {
         return 1
     fi
 
-    if ! command -v rye >/dev/null 2>&1; then
-        error "rye command not found, cannot run upsum"
-        FAILED_UPDATES+=("upsum")
+    if ! command -v uv >/dev/null 2>&1; then
+        error "uv command not found, cannot run upsum"
+        FAILED_UPDATES+=(upsum")
         return 1
     fi
 
@@ -432,7 +433,7 @@ run_upsum() {
     current_dir=$(pwd)
     cd "$upsum_dir"
     info "Running upsum..."
-    if rye run upsum --log-file "$LOGFILE"; then
+    if uv run upsum --log-file "$LOGFILE"; then
         success "upsum run completed."
     else
         error "upsum run failed"
