@@ -190,19 +190,19 @@ update_zig() {
     fi
 }
 
-# Python (Rye) Update
-update_rye() {
-    info "Updating Rye (Python toolchain)..."
-    if command -v rye >/dev/null 2>&1; then
-        rye self update
+# Python (uv) Update
+update_uv() {
+    info "Updating uv (Python toolchain)..."
+    if command -v uv >/dev/null 2>&1; then
+        uv self update
         # You can add global tools to update here
         # Example:
-        # if rye list 2>/dev/null | grep -q "httpie"; then
-        #     rye install httpie --force
+        # if uv tool list 2>/dev/null | grep -q "httpie"; then
+        #     uv tool install httpie --force
         # fi
-        success "Rye updated"
+        success "uv updated"
     else
-        skip "Rye not installed"
+        skip "uv not installed"
     fi
 }
 
@@ -393,11 +393,11 @@ clean_caches() {
         success "Cargo registry cache cleaned."
     fi
 
-    # Rye caches
-    if command -v rye >/dev/null 2>&1; then
-        info "Cleaning Rye caches..."
-        rye tools clean >/dev/null 2>&1 || true
-        success "Rye caches cleaned."
+    # uv caches
+    if command -v uv >/dev/null 2>&1; then
+        info "Cleaning uv caches..."
+        uv cache clean >/dev/null 2>&1 || true
+        success "uv caches cleaned."
     fi
 
     # Podman Images (reclaim space from container images)
@@ -530,8 +530,8 @@ run_upsum() {
         return 1
     fi
 
-    if ! command -v rye >/dev/null 2>&1; then
-        error "rye command not found, cannot run upsum"
+    if ! command -v uv >/dev/null 2>&1; then
+        error "uv command not found, cannot run upsum"
         return 1
     fi
 
@@ -539,7 +539,7 @@ run_upsum() {
     current_dir=$(pwd)
     cd "$upsum_dir"
     info "Running upsum..."
-    rye run upsum --log-file "$LOGFILE"
+    uv run upsum --log-file "$LOGFILE"
     success "upsum run completed."
     cd "$current_dir"
 }
@@ -597,9 +597,9 @@ run_all_updates() {
     update_dietpi; _track_result "update_dietpi" $?
     update_homebrew; _track_result "update_homebrew" $?
 
-    # Development tools (Zig before Cargo/Rye/NPM for C compiler availability)
+    # Development tools (Zig before Cargo/uv/NPM for C compiler availability)
     update_zig; _track_result "update_zig" $?
-    update_rye; _track_result "update_rye" $?
+    update_uv; _track_result "update_uv" $?
     update_cargo; _track_result "update_cargo" $?
     update_npm; _track_result "update_npm" $?
 
