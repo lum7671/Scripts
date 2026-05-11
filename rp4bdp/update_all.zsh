@@ -481,6 +481,79 @@ clean_caches() {
     success "Cache cleanup completed (safe mode)."
 }
 
+# Pull all existing Podman images and log whether each was updated
+update_podman_images() {
+    if ! command -v podman >/dev/null 2>&1; then
+        skip "podman not found, skipping image updates."
+        return 2
+    fi
+
+    info "Updating Podman container images..."
+
+    local images
+    images=$(podman images --format "{{.Repository}} {{.Tag}} {{.ID}}" 2>/dev/null)
+
+    if [[ -z "$images" ]]; then
+        skip "No Podman images found."
+        return 2
+    fi
+
+    local updated_images=()
+    local unchanged_images=()
+    local failed_images=()
+
+    while IFS=' ' read -r repo tag old_id; do
+        [[ -z "$repo" || "$repo" == "<none>" ]] && continue
+        [[ -z "$tag"  || "$tag"  == "<none>" ]] && continue
+
+        local full_ref="${repo}:${tag}"
+        info "Pulling ${full_ref} ..."
+
+        if podman pull "${full_ref}" 2>&1; then
+            local new_id
+            new_id=$(podman images --format "{{.ID}}" --filter "reference=${full_ref}" 2>/dev/null | head -n1)
+
+            if [[ "$old_id" != "$new_id" ]]; then
+                echo "  UPDATED:   ${full_ref}  (${old_id} -> ${new_id})"
+                updated_images+=("${full_ref}")
+            else
+                echo "  UNCHANGED: ${full_ref}  (${old_id})"
+                unchanged_images+=("${full_ref}")
+            fi
+        else
+            echo "  FAILED:    ${full_ref}"
+            failed_images+=("${full_ref}")
+        fi
+    done <<< "$images"
+
+    echo ""
+    echo "╔═══════════════════════════════════════════════════╗"
+    echo "║         Podman Image Update Summary               ║"
+    echo "╚═══════════════════════════════════════════════════╝"
+
+    if [[ ${#updated_images[@]} -gt 0 ]]; then
+        echo "✅ Updated (container restart recommended): ${#updated_images[@]}"
+        for img in "${updated_images[@]}"; do echo "     $img"; done
+    fi
+
+    if [[ ${#unchanged_images[@]} -gt 0 ]]; then
+        echo "➖ Unchanged: ${#unchanged_images[@]}"
+        for img in "${unchanged_images[@]}"; do echo "     $img"; done
+    fi
+
+    if [[ ${#failed_images[@]} -gt 0 ]]; then
+        echo "❌ Failed: ${#failed_images[@]}"
+        for img in "${failed_images[@]}"; do echo "     $img"; done
+    fi
+
+    echo ""
+
+    if [[ ${#failed_images[@]} -gt 0 ]]; then
+        return 1
+    fi
+    success "Podman image updates completed."
+}
+
 # Aggressive cleanup (space reclamation for DietPi/low-storage systems)
 clean_caches_aggressive() {
     info "Running aggressive cache cleanup (WARNING: May affect development environment)..."
@@ -665,6 +738,9 @@ run_all_updates() {
 
     # User Git Repos
     update_git_repos; _track_result "update_git_repos" $?
+
+    # Podman Images
+    update_podman_images; _track_result "update_podman_images" $?
 
     # Final Cleanup
     clean_caches; _track_result "clean_caches" $?
