@@ -23,10 +23,18 @@ mkdir -p "$LOG_DIR"
 LOGFILE="${LOGFILE_OVERRIDE:-${LOG_DIR}/update_all-${TODAY}.log}"
 
 # Add paths to local git repositories you want to automatically pull updates for.
+# Format:
+#   "/path/to/repo"            - pull as the current user
+#   "user:/path/to/repo"       - pull as the specified user via sudo
 # Example:
 # readonly GITS=(
 #     "$HOME/git/my-project"
-#     "$HOME/Work/another-repo"
+#     "www-data:/opt/FreshRSS"
+#     "www-data:/opt/FreshRSS/extensions"
+#     "www-data:/opt/FreshRSS/extensions/git/freshrss-extensions"
+#     "www-data:/opt/FreshRSS/extensions/FreshRSS---Auto-Refresh-Extension"
+#     "www-data:/opt/FreshRSS/extensions/FreshRSS-AutoTTL"
+#     "pihole:/opt/pihole-repo"
 # )
 readonly GITS=()
 
@@ -330,24 +338,38 @@ update_git_repos() {
     fi
 
     info "Updating configured git repositories..."
-    local current_dir=$(pwd)
 
-    for repo in "${GITS[@]}"; do
-        if [[ -d "$repo" ]]; then
-            info "Updating $repo..."
-            (
-              cd "$repo" && \
-              git pull --no-edit --rebase && \
-              git fetch --all --prune --jobs=10
-            ) || {
-                error "Failed to update $repo"
+    for entry in "${GITS[@]}"; do
+        local run_as="" repo_path=""
+
+        # Parse "user:/path" vs "/path"
+        if [[ "$entry" != /* && "$entry" == *:* ]]; then
+            run_as="${entry%%:*}"
+            repo_path="${entry#*:}"
+        else
+            repo_path="$entry"
+        fi
+
+        if [[ ! -d "$repo_path" ]]; then
+            error "Directory not found: $repo_path"
+            continue
+        fi
+
+        if [[ -n "$run_as" ]]; then
+            info "Updating $repo_path (as $run_as)..."
+            sudo -u "$run_as" git -C "$repo_path" pull --no-edit --rebase && \
+            sudo -u "$run_as" git -C "$repo_path" fetch --all --prune --jobs=10 || {
+                error "Failed to update $repo_path (as $run_as)"
             }
         else
-            error "Directory not found: $repo"
+            info "Updating $repo_path..."
+            git -C "$repo_path" pull --no-edit --rebase && \
+            git -C "$repo_path" fetch --all --prune --jobs=10 || {
+                error "Failed to update $repo_path"
+            }
         fi
-done
+    done
 
-    cd "$current_dir"
     success "Git repositories updated."
 }
 
