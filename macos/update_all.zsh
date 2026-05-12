@@ -119,7 +119,7 @@ update_mas() {
 update_uv() {
     info "Updating uv (Python toolchain)..."
     if command -v uv >/dev/null 2>&1; then
-        uv self update
+        HTTPS_PROXY=socks5://127.0.0.1:9050 uv self update
         success "uv updated"
     else
         skip "uv not installed"
@@ -425,7 +425,7 @@ run_upsum() {
 
     if ! command -v uv >/dev/null 2>&1; then
         error "uv command not found, cannot run upsum"
-        FAILED_UPDATES+=(upsum")
+        FAILED_UPDATES+=("upsum")
         return 1
     fi
 

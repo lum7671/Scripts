@@ -108,18 +108,14 @@ update_mas() {
     fi
 }
 
-# Python (Rye) Update
-update_rye() {
-    info "Updating Rye (Python toolchain)..."
-    if command -v rye >/dev/null 2>&1; then
-        rye self update
-        # Update global tools installed via rye (force reinstall without prompts)
-        if rye list 2>/dev/null | grep -q "httpie"; then
-            rye install httpie --force
-        fi
-        success "Rye updated"
+# Python (uv) Update
+update_uv() {
+    info "Updating uv (Python toolchain)..."
+    if command -v uv >/dev/null 2>&1; then
+        uv self update
+        success "uv updated"
     else
-        skip "Rye not installed"
+        skip "uv not installed"
     fi
 }
 

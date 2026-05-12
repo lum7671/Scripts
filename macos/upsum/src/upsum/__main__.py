@@ -78,7 +78,7 @@ def generate_summary_with_gemini(api_key, parsed_data):
        - **## Ruby (Gem)**
        - **## Java (Jenv)**
        - **.NET**
-       - **## Rye**
+    - **## uv**
        - **## Oh My Zsh**
        - **## Emacs**
        - **## Git Repositories** (git 저장소 업데이트)
@@ -125,8 +125,8 @@ def generate_summary_with_gemini(api_key, parsed_data):
     ## Rust
     - rustc: 1.91.0 → 1.92.0
 
-    ## Rye
-    - Rye: 0.43.0 → 0.44.0
+    ## uv
+    - uv: 0.9.27 → 0.9.28
 
     ## Emacs
     - Doom Emacs: 151개 패키지 최신 상태 유지
