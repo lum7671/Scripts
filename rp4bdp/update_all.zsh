@@ -36,31 +36,18 @@ LOGFILE="${LOGFILE_OVERRIDE:-${LOG_DIR}/update_all-${TODAY}.log}"
 #     "www-data:/opt/FreshRSS/extensions/FreshRSS-AutoTTL"
 #     "pihole:/opt/pihole-repo"
 # )
+readonly GIT_CHECK_LIST_FILE="$HOME/git/check.lst"
+typeset -a _GIT_CHECK_ENTRIES=()
+
+if [[ -r "$GIT_CHECK_LIST_FILE" ]]; then
+    for repo_rel_path in "${(@f)$(<"$GIT_CHECK_LIST_FILE")}"; do
+        [[ -z "$repo_rel_path" || "$repo_rel_path" == \#* ]] && continue
+        _GIT_CHECK_ENTRIES+=("$HOME/git/$repo_rel_path")
+    done
+fi
+
 readonly GITS=(
-    "$HOME/git/AriaNg"
-    "$HOME/git/conmon"
-    "$HOME/git/grafito"
-    "$HOME/git/lum7671blog"
-    "$HOME/git/pelican-plugins"
-    "$HOME/git/upsum"
-    "$HOME/git/Flex"
-    "$HOME/git/dnscrypt-proxy-src/src"
-    "$HOME/git/ladder"
-    "$HOME/git/lyrebird"
-    "$HOME/git/podman"
-    "$HOME/git/zmx"
-    "$HOME/git/Scripts"
-    "$HOME/git/dotter"
-    "$HOME/git/linkding"
-    "$HOME/git/mtproto.zig"
-    "$HOME/git/shards"
-    "$HOME/git/aria2"
-    "$HOME/git/lorg"
-    "$HOME/git/telegram-reminder-scheduler-bot"
-    "$HOME/git/bookmark_tagger"
-    "$HOME/git/lsr"
-    "$HOME/git/ntp_monitor"
-    "$HOME/git/update-golang"
+    "${_GIT_CHECK_ENTRIES[@]}"
     "www-data:/opt/FreshRSS"
     "www-data:/opt/FreshRSS/extensions"
     "www-data:/opt/FreshRSS/extensions/git/freshrss-extensions"
