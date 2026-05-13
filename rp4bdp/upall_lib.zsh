@@ -1,74 +1,5 @@
-#!/usr/bin/env zsh
-#
-# Comprehensive update script for DietPi, adapted for this system.
-# Updates system packages, development tools, and shell environment.
-#
-
-# Ensure we're in a login shell environment
-emulate -L zsh
-
-# Set TERM for non-interactive sessions like cron
-export TERM=${TERM:-dumb}
-
-# Source zshrc to get the full PATH and environment, but suppress output
-# to avoid polluting logs or command output.
-if [[ -f "$HOME/.zshrc" ]]; then
-    source "$HOME/.zshrc" >/dev/null 2>&1 || true
-fi
-
-# ===== CONFIGURATION =====
-TODAY="${TODAY_OVERRIDE:-$(date +%Y%m%d_%H%M%S)}"
-LOG_DIR="$HOME/logs"
-mkdir -p "$LOG_DIR"
-LOGFILE="${LOGFILE_OVERRIDE:-${LOG_DIR}/update_all-${TODAY}.log}"
-
-# Add paths to local git repositories you want to automatically pull updates for.
-# Format:
-#   "/path/to/repo"            - pull as the current user
-#   "user:/path/to/repo"       - pull as the specified user via sudo
-# Example:
-# readonly GITS=(
-#     "$HOME/git/my-project"
-#     "www-data:/opt/FreshRSS"
-#     "www-data:/opt/FreshRSS/extensions"
-#     "www-data:/opt/FreshRSS/extensions/git/freshrss-extensions"
-#     "www-data:/opt/FreshRSS/extensions/FreshRSS---Auto-Refresh-Extension"
-#     "www-data:/opt/FreshRSS/extensions/FreshRSS-AutoTTL"
-#     "pihole:/opt/pihole-repo"
-# )
-readonly GIT_CHECK_LIST_FILE="$HOME/git/check.lst"
-typeset -a _GIT_CHECK_ENTRIES=()
-
-if [[ -r "$GIT_CHECK_LIST_FILE" ]]; then
-    for repo_rel_path in "${(@f)$(<"$GIT_CHECK_LIST_FILE")}"; do
-        # Normalize CRLF and trim surrounding whitespace from each line.
-        repo_rel_path="${repo_rel_path//$'\r'/}"
-        repo_rel_path="${repo_rel_path#"${repo_rel_path%%[![:space:]]*}"}"
-        repo_rel_path="${repo_rel_path%"${repo_rel_path##*[![:space:]]}"}"
-
-        [[ -z "$repo_rel_path" || "$repo_rel_path" == \#* ]] && continue
-
-        if [[ "$repo_rel_path" == /* ]]; then
-            _GIT_CHECK_ENTRIES+=("$repo_rel_path")
-        else
-            _GIT_CHECK_ENTRIES+=("$HOME/git/$repo_rel_path")
-        fi
-    done
-fi
-
-readonly GITS=(
-    "${_GIT_CHECK_ENTRIES[@]}"
-    "www-data:/opt/FreshRSS"
-    "www-data:/opt/FreshRSS/extensions"
-    "www-data:/opt/FreshRSS/extensions/git/freshrss-extensions"
-    "www-data:/opt/FreshRSS/extensions/FreshRSS---Auto-Refresh-Extension"
-    "www-data:/opt/FreshRSS/extensions/FreshRSS-AutoTTL"
-    "root:/etc/.pihole"
-)
-
-# ===== TRACKING ARRAYS =====
-declare -a FAILED_UPDATES=()
-declare -a SKIPPED_UPDATES=()
+# Shared library for upall.zsh.
+# This file is meant to be sourced by upall.zsh.
 
 # ===== HELPER FUNCTIONS =====
 info() {
@@ -91,7 +22,7 @@ skip() {
 _track_result() {
     local fn_name="$1"
     local exit_code="$2"
-    
+
     if [[ $exit_code -eq 0 ]]; then
         return 0
     elif [[ $exit_code -eq 2 ]]; then
@@ -99,6 +30,22 @@ _track_result() {
     else
         FAILED_UPDATES+=("$fn_name")
     fi
+}
+
+# Run one update step and record the result in tracking arrays.
+run_step() {
+    local fn_name="$1"
+
+    if ! typeset -f "$fn_name" >/dev/null 2>&1; then
+        error "Unknown function: $fn_name"
+        FAILED_UPDATES+=("$fn_name")
+        return 1
+    fi
+
+    "$fn_name"
+    local exit_code=$?
+    _track_result "$fn_name" "$exit_code"
+    return "$exit_code"
 }
 
 # Initialize NVM for Node.js operations
@@ -114,7 +61,7 @@ _init_nvm() {
 # Manage NPM_CONFIG_PREFIX (needed for nvm compatibility)
 _manage_npm_prefix() {
     local action="$1"  # "save" or "restore"
-    
+
     if [[ "$action" = "save" ]]; then
         if [[ -n "${NPM_CONFIG_PREFIX:-}" ]]; then
             export _NPM_CONFIG_PREFIX_SAVED="$NPM_CONFIG_PREFIX"
@@ -191,9 +138,11 @@ update_homebrew() {
 update_zig() {
     info "Updating Zig compiler..."
     local manage_zig_path=""
-    
+
     # Look for manage_zig.sh in common locations
-    if [[ -x "${0:h}/manage_zig.sh" ]]; then
+    if [[ -n "${UPALL_SCRIPT_DIR:-}" && -x "${UPALL_SCRIPT_DIR}/manage_zig.sh" ]]; then
+        manage_zig_path="${UPALL_SCRIPT_DIR}/manage_zig.sh"
+    elif [[ -x "${0:h}/manage_zig.sh" ]]; then
         manage_zig_path="${0:h}/manage_zig.sh"
     elif [[ -x "/usr/local/bin/manage_zig.sh" ]]; then
         manage_zig_path="/usr/local/bin/manage_zig.sh"
@@ -203,17 +152,17 @@ update_zig() {
         skip "manage_zig.sh not found in expected locations"
         return 2
     fi
-    
+
     # Run manage_zig.sh with skip-test for faster updates on DietPi
     # Capture output to check for success markers
     local output
     output=$("$manage_zig_path" --skip-test update 2>&1)
     local exit_code=$?
-    
+
     # Print output from manage_zig.sh
     echo "$output"
-    
-    # Check if Zig is already up-to-date or was successfully updated (look for ✅ markers)
+
+    # Check if Zig is already up-to-date or was successfully updated (look for success markers)
     if echo "$output" | grep -q "✅"; then
         success "Zig compiler status verified"
         return 0
@@ -231,11 +180,6 @@ update_uv() {
     info "Updating uv (Python toolchain)..."
     if command -v uv >/dev/null 2>&1; then
         uv self update
-        # You can add global tools to update here
-        # Example:
-        # if uv tool list 2>/dev/null | grep -q "httpie"; then
-        #     uv tool install httpie --force
-        # fi
         success "uv updated"
     else
         skip "uv not installed"
@@ -342,7 +286,7 @@ update_gemini_cli() {
         skip "NVM not available for Gemini CLI update."
         return 2
     fi
-    
+
     # Save and unset NPM_CONFIG_PREFIX for nvm compatibility
     _manage_npm_prefix "save"
 
@@ -552,15 +496,15 @@ update_podman_images() {
     success "Podman image updates completed."
 }
 
-# Aggressive cleanup (space reclamation for DietPi/low-storage systems)
+# Aggressive cleanup (space reclamation for low-storage systems)
 clean_caches_aggressive() {
     info "Running aggressive cache cleanup (WARNING: May affect development environment)..."
-    
+
     # First run safe cleanup
     clean_caches
-    
+
     info "Proceeding with aggressive cleanup steps..."
-    
+
     # VS Code Server (downloaded binaries, will be re-downloaded on next remote connection)
     if [[ -d "$HOME/.vscode-server" ]]; then
         info "Removing VS Code Server binaries (~/.vscode-server)..."
@@ -635,7 +579,7 @@ clean_caches_aggressive() {
     fi
 
     success "Aggressive cache cleanup completed!"
-    
+
     info ""
     info "Space reclamation suggestions:"
     info "  - Run 'df -h' to check current disk space"
@@ -668,19 +612,19 @@ run_upsum() {
     cd "$current_dir"
 }
 
-# ===== MAIN ORCHESTRATION =====
+# ===== MAIN ORCHESTRATION HELPERS =====
 
 # Print summary report of update results
 print_update_summary() {
     local total_failed=${#FAILED_UPDATES[@]}
     local total_skipped=${#SKIPPED_UPDATES[@]}
-    
+
     echo ""
     echo "╔════════════════════════════════════════════════════════════════╗"
     echo "║               UPDATE SUMMARY REPORT                            ║"
     echo "╚════════════════════════════════════════════════════════════════╝"
     echo ""
-    
+
     if [[ $total_failed -gt 0 ]]; then
         echo "❌ FAILED UPDATES ($total_failed):"
         for update in "${FAILED_UPDATES[@]}"; do
@@ -688,7 +632,7 @@ print_update_summary() {
         done
         echo ""
     fi
-    
+
     if [[ $total_skipped -gt 0 ]]; then
         echo "↩️  SKIPPED UPDATES ($total_skipped):"
         for update in "${SKIPPED_UPDATES[@]}"; do
@@ -696,13 +640,13 @@ print_update_summary() {
         done
         echo ""
     fi
-    
+
     if [[ $total_failed -eq 0 && $total_skipped -eq 0 ]]; then
         echo "✅ All updates completed successfully!"
     else
         echo "📊 Status: $total_failed failures, $total_skipped skipped"
     fi
-    
+
     echo ""
 }
 
@@ -717,131 +661,32 @@ run_all_updates() {
     fi
 
     # System updates
-    update_apt; _track_result "update_apt" $?
-    update_dietpi; _track_result "update_dietpi" $?
-    update_homebrew; _track_result "update_homebrew" $?
+    run_step "update_apt"
+    run_step "update_dietpi"
+    run_step "update_homebrew"
 
     # Development tools (Zig before Cargo/uv/NPM for C compiler availability)
-    update_zig; _track_result "update_zig" $?
-    update_uv; _track_result "update_uv" $?
-    update_cargo; _track_result "update_cargo" $?
-    update_npm; _track_result "update_npm" $?
+    run_step "update_zig"
+    run_step "update_uv"
+    run_step "update_cargo"
+    run_step "update_npm"
 
     # Shell environment
-    update_zsh; _track_result "update_zsh" $?
+    run_step "update_zsh"
 
     # Specific applications (Gemini CLI depends on NPM)
-    update_opencode; _track_result "update_opencode" $?
-    update_gemini_cli; _track_result "update_gemini_cli" $?
+    run_step "update_opencode"
+    run_step "update_gemini_cli"
 
     # User Git Repos
-    update_git_repos; _track_result "update_git_repos" $?
+    run_step "update_git_repos"
 
     # Podman Images
-    update_podman_images; _track_result "update_podman_images" $?
+    run_step "update_podman_images"
 
     # Final Cleanup
-    clean_caches; _track_result "clean_caches" $?
+    run_step "clean_caches"
 
     print_update_summary
     info "All updates completed!"
 }
-
-main() {
-    local ONLY_CLEAN=false
-    local AGGRESSIVE_CLEAN=false
-    local SKIP_ZIG_TEST=false
-    local no_mail=false
-
-    # Parse command-line arguments
-    for arg in "$@"; do
-        case "$arg" in
-            --only-all-clean)
-                ONLY_CLEAN=true
-                shift
-                ;;
-            --aggressive-clean)
-                AGGRESSIVE_CLEAN=true
-                shift
-                ;;
-            --skip-zig-test)
-                SKIP_ZIG_TEST=true
-                shift
-                ;;
-            --no-mail)
-                no_mail=true
-                shift
-                ;;
-            --help|-h)
-                echo "Usage: $0 [options]"
-                echo ""
-                echo "Options:"
-                echo "  --only-all-clean        Run only cache cleanup (basic + caches)"
-                echo "  --aggressive-clean      Run aggressive cleanup (reclaim max space, slower)"
-                echo "  --skip-zig-test         Skip Zig compiler build test (faster)"
-                echo "  --no-mail               Skip sending email summary"
-                echo "  --help, -h              Show this help message"
-                echo ""
-                echo "Environment variables:"
-                echo "  UPDATE_ONLY             Comma-separated function names to run (e.g., 'update_apt,update_npm')"
-                echo "  TODAY_OVERRIDE          Override date in log filename"
-                echo "  LOGFILE_OVERRIDE        Override full log file path"
-                exit 0
-                ;;
-            *)
-                # Unknown argument, pass it through or handle as needed
-                ;;
-        esac
-    done
-
-    # Ensure log file is writable
-    if ! : >"$LOGFILE" 2>/dev/null; then
-        echo "ERROR: Cannot create log file at $LOGFILE" >&2
-        LOGFILE=$(mktemp /tmp/update_all-fallback-XXXXXX.log)
-        echo "INFO: Using fallback log file: $LOGFILE" >&2
-    fi
-
-    # Execute updates, redirecting all output to the log file
-    (
-        if [[ "$ONLY_CLEAN" = true ]]; then
-            info "Running only cache cleanup (--only-all-clean)..."
-            clean_caches || error "clean_caches failed"
-            info "Cache cleanup completed."
-        elif [[ "$AGGRESSIVE_CLEAN" = true ]]; then
-            info "Running aggressive cache cleanup (--aggressive-clean)..."
-            clean_caches_aggressive || error "clean_caches_aggressive failed"
-            info "Aggressive cache cleanup completed."
-        elif [[ -n "${UPDATE_ONLY:-}" ]]; then
-            info "Selective update mode: $UPDATE_ONLY"
-            FAILED_UPDATES=()
-            SKIPPED_UPDATES=()
-            local IFS=','
-            for fn in $UPDATE_ONLY;
-            do
-                if typeset -f "$fn" >/dev/null 2>&1;
-                then
-                    info "Running $fn ..."
-                    "$fn" || error "$fn failed"
-                    _track_result "$fn" $?
-                else
-                    error "Unknown function: $fn"
-                fi
-            done
-            print_update_summary
-            info "Selective update completed"
-        else
-            run_all_updates
-            if [[ "$no_mail" = false ]]; then
-                run_upsum
-            else
-                info "Skipping email summary (--no-mail specified)."
-            fi
-        fi
-        info "Log file created at: $LOGFILE"
-    ) >"$LOGFILE" 2>&1
-
-    # Print the log file path to stdout for the user
-    echo "Update process finished. Log file is at: $LOGFILE"
-}
-
-main "$@"
