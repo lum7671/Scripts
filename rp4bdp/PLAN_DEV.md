@@ -37,6 +37,9 @@
 - [x] Replaced repeated `_track_result` calls in `run_all_updates()` with `run_step`
 - [x] Switched argument parsing in `upall.zsh` to `while (( $# > 0 ))` style
 - [x] Updated `UPDATE_ONLY` path to use `run_step` for consistent tracking
+- [x] Added `check.lst` per-repo fallback flag:
+  - `dir` => `git pull --rebase` only
+  - `dir:f` => retry with `git pull --no-rebase` only when rebase fails
 
 ## Validation Checklist
 1. `zsh -n upall_lib.zsh`
@@ -44,6 +47,7 @@
 3. `zsh upall.zsh --help`
 4. Confirm option list parity with `update_all.zsh`
 5. Run one safe path (`--only-all-clean`) in a controlled environment when ready
+6. Check `UPDATE_ONLY="update_git_repos"` with mixed `check.lst` entries (`dir`, `dir:f`)
 
 ## Rollback
 - If any regression occurs, continue using `update_all.zsh` immediately.

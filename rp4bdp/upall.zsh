@@ -41,6 +41,8 @@ typeset -a _GIT_CHECK_ENTRIES=()
 
 if [[ -r "$GIT_CHECK_LIST_FILE" ]]; then
     for repo_rel_path in "${(@f)$(<"$GIT_CHECK_LIST_FILE")}"; do
+        local allow_fallback=false
+
         # Normalize CRLF and trim surrounding whitespace from each line.
         repo_rel_path="${repo_rel_path//$'\r'/}"
         repo_rel_path="${repo_rel_path#"${repo_rel_path%%[![:space:]]*}"}"
@@ -48,10 +50,26 @@ if [[ -r "$GIT_CHECK_LIST_FILE" ]]; then
 
         [[ -z "$repo_rel_path" || "$repo_rel_path" == \#* ]] && continue
 
+        # Optional per-repo fallback flag in check.lst:
+        #   path      -> rebase only
+        #   path:f    -> allow merge pull fallback when rebase fails
+        if [[ "$repo_rel_path" == *":f" ]]; then
+            allow_fallback=true
+            repo_rel_path="${repo_rel_path%:f}"
+        fi
+
         if [[ "$repo_rel_path" == /* ]]; then
-            _GIT_CHECK_ENTRIES+=("$repo_rel_path")
+            if [[ "$allow_fallback" == true ]]; then
+                _GIT_CHECK_ENTRIES+=("${repo_rel_path}|f")
+            else
+                _GIT_CHECK_ENTRIES+=("$repo_rel_path")
+            fi
         else
-            _GIT_CHECK_ENTRIES+=("$HOME/git/$repo_rel_path")
+            if [[ "$allow_fallback" == true ]]; then
+                _GIT_CHECK_ENTRIES+=("$HOME/git/$repo_rel_path|f")
+            else
+                _GIT_CHECK_ENTRIES+=("$HOME/git/$repo_rel_path")
+            fi
         fi
     done
 fi

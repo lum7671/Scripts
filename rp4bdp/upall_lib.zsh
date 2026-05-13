@@ -310,38 +310,91 @@ update_git_repos() {
     fi
 
     info "Updating configured git repositories..."
+    local had_failure=0
 
     for entry in "${GITS[@]}"; do
+        local allow_fallback=false
+        local core_entry="$entry"
         local run_as="" repo_path=""
 
+        # Optional metadata suffix:
+        #   |f => allow merge pull fallback when rebase fails.
+        if [[ "$core_entry" == *"|f" ]]; then
+            allow_fallback=true
+            core_entry="${core_entry%|f}"
+        elif [[ "$core_entry" == *"|"* ]]; then
+            error "Unknown git entry metadata, ignoring flags: $core_entry"
+            core_entry="${core_entry%%|*}"
+        fi
+
         # Parse "user:/path" vs "/path"
-        if [[ "$entry" != /* && "$entry" == *:* ]]; then
-            run_as="${entry%%:*}"
-            repo_path="${entry#*:}"
+        if [[ "$core_entry" != /* && "$core_entry" == *:* ]]; then
+            run_as="${core_entry%%:*}"
+            repo_path="${core_entry#*:}"
         else
-            repo_path="$entry"
+            repo_path="$core_entry"
         fi
 
         if [[ ! -d "$repo_path" ]]; then
             error "Directory not found: $repo_path"
             error "Raw path (escaped): ${(qqq)repo_path}"
+            had_failure=1
             continue
         fi
 
         if [[ -n "$run_as" ]]; then
             info "Updating $repo_path (as $run_as)..."
-            sudo -u "$run_as" git -C "$repo_path" pull --no-edit --rebase && \
-            sudo -u "$run_as" git -C "$repo_path" fetch --all --prune --jobs=10 || {
-                error "Failed to update $repo_path (as $run_as)"
-            }
+            if sudo -u "$run_as" git -C "$repo_path" pull --no-edit --rebase; then
+                sudo -u "$run_as" git -C "$repo_path" fetch --all --prune --jobs=10 || {
+                    error "Failed to fetch after rebase pull: $repo_path (as $run_as)"
+                    had_failure=1
+                    continue
+                }
+            else
+                if [[ "$allow_fallback" == true ]]; then
+                    info "Rebase pull failed for $repo_path (as $run_as); retrying with merge pull..."
+                    if sudo -u "$run_as" git -C "$repo_path" pull --no-edit --no-rebase && \
+                       sudo -u "$run_as" git -C "$repo_path" fetch --all --prune --jobs=10; then
+                        success "Updated $repo_path (as $run_as) using merge pull fallback"
+                    else
+                        error "Failed to update $repo_path (as $run_as)"
+                        had_failure=1
+                    fi
+                else
+                    error "Failed to update $repo_path (as $run_as)"
+                    had_failure=1
+                fi
+            fi
         else
             info "Updating $repo_path..."
-            git -C "$repo_path" pull --no-edit --rebase && \
-            git -C "$repo_path" fetch --all --prune --jobs=10 || {
-                error "Failed to update $repo_path"
-            }
+            if git -C "$repo_path" pull --no-edit --rebase; then
+                git -C "$repo_path" fetch --all --prune --jobs=10 || {
+                    error "Failed to fetch after rebase pull: $repo_path"
+                    had_failure=1
+                    continue
+                }
+            else
+                if [[ "$allow_fallback" == true ]]; then
+                    info "Rebase pull failed for $repo_path; retrying with merge pull..."
+                    if git -C "$repo_path" pull --no-edit --no-rebase && \
+                       git -C "$repo_path" fetch --all --prune --jobs=10; then
+                        success "Updated $repo_path using merge pull fallback"
+                    else
+                        error "Failed to update $repo_path"
+                        had_failure=1
+                    fi
+                else
+                    error "Failed to update $repo_path"
+                    had_failure=1
+                fi
+            fi
         fi
     done
+
+    if [[ $had_failure -ne 0 ]]; then
+        error "Some git repositories failed to update."
+        return 1
+    fi
 
     success "Git repositories updated."
 }
