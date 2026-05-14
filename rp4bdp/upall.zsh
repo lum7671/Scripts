@@ -77,7 +77,7 @@ fi
 readonly GITS=(
     "${_GIT_CHECK_ENTRIES[@]}"
     "www-data:/opt/FreshRSS"
-    "www-data:/opt/FreshRSS/extensions"
+    "www-data:/opt/FreshRSS/extensions|f"
     "www-data:/opt/FreshRSS/extensions/git/freshrss-extensions"
     "www-data:/opt/FreshRSS/extensions/FreshRSS---Auto-Refresh-Extension"
     "www-data:/opt/FreshRSS/extensions/FreshRSS-AutoTTL"
