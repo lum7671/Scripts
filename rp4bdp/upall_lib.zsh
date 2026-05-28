@@ -344,47 +344,57 @@ update_git_repos() {
 
         if [[ -n "$run_as" ]]; then
             info "Updating $repo_path (as $run_as)..."
-            if sudo -u "$run_as" git -C "$repo_path" pull --no-edit --rebase; then
-                sudo -u "$run_as" git -C "$repo_path" fetch --all --prune --jobs=10 || {
+            if sudo -u "$run_as" git -C "$repo_path" pull --no-edit --rebase --verbose --progress; then
+                sudo -u "$run_as" git -C "$repo_path" fetch --all --prune --jobs=10 --verbose || {
                     error "Failed to fetch after rebase pull: $repo_path (as $run_as)"
+                    info "GIT_PULL_RESULT repo=$repo_path run_as=$run_as mode=rebase status=failed reason=fetch_failed"
                     had_failure=1
                     continue
                 }
+                info "GIT_PULL_RESULT repo=$repo_path run_as=$run_as mode=rebase status=success"
             else
                 if [[ "$allow_fallback" == true ]]; then
                     info "Rebase pull failed for $repo_path (as $run_as); retrying with merge pull..."
-                    if sudo -u "$run_as" git -C "$repo_path" pull --no-edit --no-rebase && \
-                       sudo -u "$run_as" git -C "$repo_path" fetch --all --prune --jobs=10; then
+                    if sudo -u "$run_as" git -C "$repo_path" pull --no-edit --no-rebase --verbose --progress && \
+                       sudo -u "$run_as" git -C "$repo_path" fetch --all --prune --jobs=10 --verbose; then
                         success "Updated $repo_path (as $run_as) using merge pull fallback"
+                        info "GIT_PULL_RESULT repo=$repo_path run_as=$run_as mode=merge_fallback status=success"
                     else
                         error "Failed to update $repo_path (as $run_as)"
+                        info "GIT_PULL_RESULT repo=$repo_path run_as=$run_as mode=merge_fallback status=failed"
                         had_failure=1
                     fi
                 else
                     error "Failed to update $repo_path (as $run_as)"
+                    info "GIT_PULL_RESULT repo=$repo_path run_as=$run_as mode=rebase status=failed fallback=disabled"
                     had_failure=1
                 fi
             fi
         else
             info "Updating $repo_path..."
-            if git -C "$repo_path" pull --no-edit --rebase; then
-                git -C "$repo_path" fetch --all --prune --jobs=10 || {
+            if git -C "$repo_path" pull --no-edit --rebase --verbose --progress; then
+                git -C "$repo_path" fetch --all --prune --jobs=10 --verbose || {
                     error "Failed to fetch after rebase pull: $repo_path"
+                    info "GIT_PULL_RESULT repo=$repo_path mode=rebase status=failed reason=fetch_failed"
                     had_failure=1
                     continue
                 }
+                info "GIT_PULL_RESULT repo=$repo_path mode=rebase status=success"
             else
                 if [[ "$allow_fallback" == true ]]; then
                     info "Rebase pull failed for $repo_path; retrying with merge pull..."
-                    if git -C "$repo_path" pull --no-edit --no-rebase && \
-                       git -C "$repo_path" fetch --all --prune --jobs=10; then
+                    if git -C "$repo_path" pull --no-edit --no-rebase --verbose --progress && \
+                       git -C "$repo_path" fetch --all --prune --jobs=10 --verbose; then
                         success "Updated $repo_path using merge pull fallback"
+                        info "GIT_PULL_RESULT repo=$repo_path mode=merge_fallback status=success"
                     else
                         error "Failed to update $repo_path"
+                        info "GIT_PULL_RESULT repo=$repo_path mode=merge_fallback status=failed"
                         had_failure=1
                     fi
                 else
                     error "Failed to update $repo_path"
+                    info "GIT_PULL_RESULT repo=$repo_path mode=rebase status=failed fallback=disabled"
                     had_failure=1
                 fi
             fi
